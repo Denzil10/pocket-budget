@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- No network access at all: nothing can leave this page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pocket Budget</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1b1f24; --muted: #69727d; --line: #e3e6ea;
+    --accent: #2f6fde; --good: #1f8a4c; --bad: #c8372d; --warn: #b7791f; --chip: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171b; --panel: #1c2026; --ink: #e6e9ed; --muted: #9aa3ad; --line: #2c323a;
+            --accent: #6d9cff; --good: #4cc27f; --bad: #ff6b5e; --warn: #e0a84a; --chip: #262c34; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; }
+  header .spacer { flex: 1; }
+  main { max-width: 1150px; margin: 0 auto; padding: 18px 20px 60px; }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.link { background: none; border: none; color: var(--accent); padding: 0 4px; }
+  button.danger { color: var(--bad); }
+  select, input[type=text], input[type=number], input[type=search] { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .card .sub { color: var(--muted); font-size: 12px; }
+  section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; }
+  section.panel > h2 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  section.panel > h2 .right { margin-left: auto; font-weight: normal; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.total td { font-weight: 600; border-bottom: none; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .muted { color: var(--muted); }
+  .bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; min-width: 80px; }
+  .bar > div { height: 100%; background: var(--good); }
+  .bar > div.over { background: var(--bad); } .bar > div.near { background: var(--warn); } .bar > div.none { background: var(--muted); opacity: .35; }
+  input.budget { width: 100px; text-align: right; }
+  tr.transfer td { color: var(--muted); }
+  tr.uncat td.desc { font-weight: 600; }
+  .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+  .tag.rule { color: var(--accent); }
+  #drop { border: 2px dashed var(--line); border-radius: 10px; padding: 26px; text-align: center; color: var(--muted); margin-bottom: 18px; background: var(--panel); }
+  body.dragging #drop { border-color: var(--accent); color: var(--accent); }
+  .report { margin: 8px 0 0; padding: 0; list-style: none; }
+  .report li { padding: 6px 0; border-top: 1px solid var(--line); }
+  .report .err { color: var(--bad); }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 8px; display: none; z-index: 10; max-width: 90vw; }
+  #toast button { margin-left: 10px; background: transparent; color: inherit; border-color: currentColor; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  .empty { color: var(--muted); padding: 8px 0; }
+  details summary { cursor: pointer; color: var(--muted); }
+  td.desc { word-break: break-word; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pocket Budget</h1>
+  <button id="prevMonth" title="Previous month">&larr;</button>
+  <select id="monthSel" aria-label="Month"></select>
+  <button id="nextMonth" title="Next month">&rarr;</button>
+  <span class="spacer"></span>
+  <button class="primary" id="importBtn">Import CSV…</button>
+  <input type="file" id="fileInput" accept=".csv,.CSV,text/csv,text/plain" multiple hidden>
+</header>
+
+<main>
+  <div id="drop">Drop bank CSV exports anywhere on this page (or use <b>Import CSV…</b>).<br>
+    Everything is processed and stored only in this browser — this page cannot make network requests.
+    <ul class="report" id="report"></ul>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Income</div><div class="value pos" id="sum-income">$0.00</div><div class="sub">money in this month</div></div>
+    <div class="card"><div class="label">Spent</div><div class="value neg" id="sum-spent">$0.00</div><div class="sub">excludes transfers between your accounts</div></div>
+    <div class="card"><div class="label">Left</div><div class="value" id="sum-left">$0.00</div><div class="sub">income − spent</div></div>
+    <div class="card"><div class="label">Budgeted</div><div class="value" id="sum-budgeted">$0.00</div><div class="sub" id="sum-tobudget-wrap">to budget: <span id="sum-tobudget">$0.00</span></div></div>
+    <div class="card"><div class="label">Transfers</div><div class="value muted" id="sum-transfers">$0.00</div><div class="sub">moved between your accounts</div></div>
+  </div>
+
+  <section class="panel">
+    <h2>Budget <span class="muted" id="budgetMonthLabel"></span>
+      <span class="right"><label><input type="checkbox" id="showEmpty"> show empty categories</label>
+      <button id="addCat">+ Category</button></span></h2>
+    <table id="budgetTable">
+      <thead><tr><th>Category</th><th class="num">Budget</th><th class="num">Spent</th><th class="num">Remaining</th><th style="width:22%"></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="muted" style="margin:8px 0 0;font-size:12px">A budget you type applies to this month and carries forward to later months until you change it. Refunds reduce spending in their category.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Transactions <span class="muted" id="txnCount"></span>
+      <span class="right">
+        <input type="search" id="search" placeholder="Filter…">
+        <select id="catFilter"><option value="">All categories</option></select>
+      </span></h2>
+    <table id="txnTable">
+      <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="muted" style="margin:8px 0 0;font-size:12px">Change a category and it becomes a rule: every past and future transaction with the same merchant follows it.</p>
+  </section>
+
+  <div class="cols">
+    <section class="panel">
+      <h2>Accounts</h2>
+      <div id="accounts"></div>
+    </section>
+    <section class="panel">
+      <h2>Your rules</h2>
+      <div id="rules"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Data</h2>
+    <button id="exportBtn">Export backup (.json)</button>
+    <button id="restoreBtn">Restore backup…</button>
+    <input type="file" id="restoreInput" accept=".json,application/json" hidden>
+    <button id="wipeBtn" class="danger">Erase everything</button>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ======================= storage ======================= */
+const STORE_KEY = 'pocketbudget.v1';
+const INCOME = 'Income', TRANSFER = 'Transfer', UNCAT = 'Uncategorized';
+const DEFAULT_CATS = ['Housing', 'Groceries', 'Dining', 'Transport', 'Utilities', 'Insurance', 'Subscriptions',
+  'Shopping', 'Health', 'Entertainment', 'Travel', 'Personal', 'Gifts & Donations', 'Fees & Interest', UNCAT];
+
+function blankState() {
+  return { version: 1, txns: [], accounts: {}, rules: [], budgets: {}, categories: DEFAULT_CATS.slice() };
+}
+function loadState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s && Array.isArray(s.txns)) return Object.assign(blankState(), s);
+  } catch (e) { /* corrupted: start fresh */ }
+  return blankState();
+}
+let state = loadState();
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+const ui = { month: null, showEmpty: false, search: '', catFilter: '' };
+
+/* ======================= CSV parsing ======================= */
+function parseCSV(text, delim) {
+  const rows = [];
+  let row = [], field = '', inQ = false, i = 0;
+  const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"' && field.trim() === '') { inQ = true; field = ''; i++; continue; }
+    if (c === delim) { row.push(field); field = ''; i++; continue; }
+    if (c === '\r' || c === '\n') {
+      row.push(field); rows.push(row); row = []; field = '';
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      i++; continue;
+    }
+    field += c; i++;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.map(r => r.map(x => x.trim()));
+}
+
+function detectDelimiter(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim()).slice(0, 40);
+  let best = ',', bestScore = -1;
+  for (const d of [',', ';', '\t', '|']) {
+    const freq = {};
+    for (const l of lines) {
+      const k = parseCSV(l, d)[0].length;
+      if (k > 1) freq[k] = (freq[k] || 0) + 1;
+    }
+    let score = 0;
+    for (const k in freq) score = Math.max(score, freq[k] * 100 + Math.min(+k, 10));
+    if (score > bestScore) { bestScore = score; best = d; }
+  }
+  return best;
+}
+
+/* amounts: "1,234.56", "-1,285.58", "(12.00)", "$5", "12,50" (EU), "12.00-", "5.00 CR" */
+function parseAmount(s) {
+  if (s == null) return null;
+  let t = String(s).trim();
+  if (!t) return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1).trim(); }
+  const cr = /\s*CR$/i.test(t), dr = /\s*DR$/i.test(t);
+  t = t.replace(/\s*(CR|DR)$/i, '');
+  t = t.replace(/[\s$€£¥₹]|USD|EUR|GBP|CAD|AUD/gi, '');
+  if (/^[+-]/.test(t)) { if (t[0] === '-') neg = !neg; t = t.slice(1); }
+  if (/^[$€£]/.test(t)) t = t.slice(1);
+  if (/-$/.test(t)) { neg = !neg; t = t.slice(0, -1); }
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t) || /^\d*\.?\d+$/.test(t)) t = t.replace(/,/g, '');
+  else if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t) || /^\d+,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.');
+  else return null;
+  let v = parseFloat(t);
+  if (!isFinite(v)) return null;
+  if (neg) v = -v;
+  if (dr) v = -Math.abs(v);
+  if (cr) v = Math.abs(v);
+  return v;
+}
+
+/* dates */
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+  january: 1, february: 2, march: 3, april: 4, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+function fixYear(y) { y = +y; return y < 100 ? 2000 + y : y; }
+// Returns a structural reading of a date cell; day/month order may still be ambiguous ('xx').
+function dateParts(s) {
+  if (!s) return null;
+  s = s.trim();
+  let m;
+  if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:[T\s].*)?$/))) return { kind: 'ymd', y: +m[1], mo: +m[2], d: +m[3] };
+  if ((m = s.match(/^(\d{1,2})([-\/.])(\d{1,2})\2(\d{4}|\d{2})(?:\s.*)?$/))) {
+    const a = +m[1], b = +m[3];
+    if (a < 1 || b < 1 || a > 31 || b > 31 || (a > 12 && b > 12)) return null;
+    return { kind: 'xx', a, b, y: fixYear(m[4]), sep: m[2] };
+  }
+  if ((m = s.match(/^(\d{1,2})[-\s]([A-Za-z]{3,9})\.?[-\s,]+(\d{4}|\d{2})$/)) && MONTHS[m[2].toLowerCase()]) return { kind: 'ymd', y: fixYear(m[3]), mo: MONTHS[m[2].toLowerCase()], d: +m[1] };
+  if ((m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/)) && MONTHS[m[1].toLowerCase()]) return { kind: 'ymd', y: +m[3], mo: MONTHS[m[1].toLowerCase()], d: +m[2] };
+  return null;
+}
+function validYMD(y, mo, d) {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCMonth() !== mo - 1) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function toISO(p, order) {
+  if (!p) return null;
+  if (p.kind === 'ymd') return validYMD(p.y, p.mo, p.d);
+  return order === 'DMY' ? validYMD(p.y, p.b, p.a) : validYMD(p.y, p.a, p.b);
+}
+// Decide MM/DD vs DD/MM for a whole column.
+function detectDateOrder(values) {
+  const parts = values.map(dateParts).filter(p => p && p.kind === 'xx');
+  if (!parts.length) return { order: 'MDY', label: 'YYYY-MM-DD' };
+  const sep = parts[0].sep;
+  const lbl = o => (o === 'MDY' ? `MM${sep}DD${sep}YYYY` : `DD${sep}MM${sep}YYYY`);
+  if (parts.some(p => p.a > 12)) return { order: 'DMY', label: lbl('DMY') };
+  if (parts.some(p => p.b > 12)) return { order: 'MDY', label: lbl('MDY') };
+  // Ambiguous: pick the reading under which the file is most consistently sorted.
+  const disorder = o => {
+    const ds = parts.map(p => toISO(p, o));
+    let up = 0, down = 0;
+    for (let i = 1; i < ds.length; i++) { if (ds[i] > ds[i - 1]) up++; else if (ds[i] < ds[i - 1]) down++; }
+    return Math.min(up, down);
+  };
+  const m = disorder('MDY'), d = disorder('DMY');
+  let order = m < d ? 'MDY' : d < m ? 'DMY' : (sep === '.' || !/^en-US/i.test(navigator.language || 'en-US') ? 'DMY' : 'MDY');
+  return { order, label: lbl(order) + ' (guessed)' };
+}
+
+/* ======================= file analysis ======================= */
+const nonEmpty = r => r.filter(c => c !== '').length;
+const rowHasDate = r => r.some(c => c && dateParts(c));
+
+function findTable(rows) {
+  let best = null;
+  for (let j = 0; j < rows.length; j++) {
+    if (!rowHasDate(rows[j]) || nonEmpty(rows[j]) < 2) continue;
+    if (j > 0 && nonEmpty(rows[j - 1]) >= 2 && rowHasDate(rows[j - 1])) continue; // not the start of a block
+    let k = j, n = 0;
+    while (k < rows.length) {
+      const r = rows[k];
+      if (nonEmpty(r) === 0) { k++; continue; }
+      if (!rowHasDate(r) || nonEmpty(r) < 2) break;
+      n++; k++;
+    }
+    if (!best || n > best.n) best = { start: j, end: k, n };
+  }
+  if (!best) return null;
+  let h = best.start - 1;
+  while (h >= 0 && nonEmpty(rows[h]) === 0) h--;
+  const header = h >= 0 && nonEmpty(rows[h]) >= 2 && !rowHasDate(rows[h]) ? rows[h] : null;
+  const data = rows.slice(best.start, best.end).filter(r => nonEmpty(r) > 0);
+  return { header, headerIndex: header ? h : -1, data };
+}
+
+const RX = {
+  datePref: /trans|^date$|booking|^posted?$|value date/i,
+  datePost: /post/i,
+  amount: /amount|amt|value|^sum$|betrag|montant/i,
+  debit: /debit|withdraw|money out|paid out|outflow|^out$|charge/i,
+  credit: /credit|deposit|money in|paid in|inflow|^in$|receiv/i,
+  balance: /balance|\bbal\b|bal\.|saldo/i,
+  notMoney: /balance|\bbal\b|bal\.|account|acct|card|check|cheque|slip|\bref|\bid\b|number|\bno\.?$|#|zip|code|serial|member/i,
+  descStrong: /desc|payee|merchant|narrat|beschreib|libell/i,
+  descWeak: /memo|detail|name|transaction|particular|reference/i,
+  category: /categor/i,
+};
+
+function analyzeFile(text, filename) {
+  text = text.replace(/^﻿/, '');
+  const delim = detectDelimiter(text);
+  const rows = parseCSV(text, delim);
+  const table = findTable(rows);
+  if (!table || table.data.length === 0) return { error: 'Could not find any rows with dates in this file.' };
+  const { header, data } = table;
+  const ncol = Math.max(header ? header.length : 0, ...data.map(r => r.length));
+  const names = [];
+  for (let c = 0; c < ncol; c++) names.push(header && header[c] ? header[c] : `Column ${c + 1}`);
+  const named = c => !!(header && header[c]);
+
+  // profile every column
+  const cols = names.map((name, c) => {
+    const vals = data.map(r => r[c] || '');
+    const filled = vals.filter(v => v !== '');
+    const dates = filled.filter(v => dateParts(v)).length;
+    const nums = filled.filter(v => parseAmount(v) !== null).length;
+    const distinct = new Set(filled).size;
+    const avgLen = filled.length ? filled.reduce((s, v) => s + v.length, 0) / filled.length : 0;
+    return { c, name, vals, filled: filled.length, dateRate: filled.length ? dates / filled.length : 0,
+             numRate: filled.length ? nums / filled.length : 0, distinct, avgLen,
+             decimals: filled.filter(v => /[.,]\d{2}\)?$|[.,]\d{2}\s*(CR|DR)?$/i.test(v)).length };
+  });
+  const n = data.length;
+  const isDateCol = k => k.filled >= n * 0.5 && k.dateRate >= 0.9;
+  const dateCols = cols.filter(isDateCol);
+  if (!dateCols.length) return { error: 'No date column found.' };
+  const dateCol = dateCols.find(k => named(k.c) && RX.datePref.test(k.name) && !RX.datePost.test(k.name))
+    || dateCols.find(k => !RX.datePost.test(k.name)) || dateCols[0];
+
+  const isNum = k => !isDateCol(k) && k.filled > 0 && k.numRate >= 0.9;
+  const moneyCols = cols.filter(k => isNum(k) && !(named(k.c) && RX.notMoney.test(k.name)));
+  let amountCol = null, debitCol = null, creditCol = null;
+  const balanceCol = cols.find(k => isNum(k) && named(k.c) && RX.balance.test(k.name)) || null;
+  if (header) {
+    amountCol = moneyCols.find(k => RX.amount.test(k.name)) || null;
+    debitCol = moneyCols.find(k => RX.debit.test(k.name)) || null;
+    creditCol = moneyCols.find(k => RX.credit.test(k.name) && k !== debitCol) || null;
+    if (amountCol && debitCol && creditCol && amountCol.filled < n * 0.5) amountCol = null;
+  }
+  if (!amountCol && !(debitCol && creditCol)) {
+    debitCol = creditCol = null;
+    // unnamed/unknown columns: money-looking columns, minus running balances
+    let cands = moneyCols.filter(k => k.distinct > 1 && k.decimals >= k.filled * 0.5);
+    const isRunningBalanceOf = (b, a) => {
+      let ok = 0;
+      for (let i = 1; i < n; i++) {
+        const b0 = parseAmount(data[i - 1][b.c]), b1 = parseAmount(data[i][b.c]);
+        const a0 = parseAmount(data[i - 1][a.c]), a1 = parseAmount(data[i][a.c]);
+        if (b0 == null || b1 == null) continue;
+        if ((a1 != null && Math.abs(Math.abs(b1 - b0) - Math.abs(a1)) < 0.006) ||
+            (a0 != null && Math.abs(Math.abs(b0 - b1) - Math.abs(a0)) < 0.006)) ok++;
+      }
+      return ok >= (n - 1) * 0.6;
+    };
+    cands = cands.filter(b => !cands.some(a => a !== b && isRunningBalanceOf(b, a)));
+    if (cands.length >= 2 && cands[0].filled < n && cands[1].filled < n &&
+        data.every(r => ((r[cands[0].c] || '') !== '') !== ((r[cands[1].c] || '') !== ''))) {
+      debitCol = cands[0]; creditCol = cands[1];
+    } else if (cands.length) amountCol = cands[0];
+  }
+  if (!amountCol && !(debitCol && creditCol)) return { error: 'No amount column found.' };
+
+  const used = new Set([dateCol, amountCol, debitCol, creditCol, balanceCol].filter(Boolean).map(k => k.c));
+  const textCols = cols.filter(k => !used.has(k.c) && !isDateCol(k) && k.filled > 0 && k.numRate < 0.5);
+  const descScore = k => (k.distinct / Math.max(1, k.filled)) * Math.min(k.avgLen, 40) +
+    (named(k.c) && RX.descStrong.test(k.name) ? 30 : named(k.c) && RX.descWeak.test(k.name) ? 10 : 0);
+  const descCol = textCols.filter(k => !(named(k.c) && RX.category.test(k.name)))
+    .sort((a, b) => descScore(b) - descScore(a))[0];
+  if (!descCol) return { error: 'No description column found.' };
+  const catCol = textCols.find(k => named(k.c) && RX.category.test(k.name)) || null;
+  const indCol = textCols.find(k => k !== descCol && k.filled === n &&
+    k.vals.every(v => /^(debit|credit|dr|cr|db|withdrawal|deposit)$/i.test(v)));
+  const indIsCredit = v => /^(credit|cr|deposit)$/i.test(v);
+
+  const order = detectDateOrder(dateCol.vals);
+
+  // raw amounts (sign not yet oriented)
+  let raw = data.map(r => {
+    if (amountCol) return parseAmount(r[amountCol.c]);
+    const d = parseAmount(r[debitCol.c]), c = parseAmount(r[creditCol.c]);
+    if (d == null && c == null) return null;
+    return Math.abs(c || 0) - Math.abs(d || 0);
+  });
+
+  // ---- orient signs so that money in > 0, money out < 0 ----
+  let sign = 1, signMethod;
+  const descs = data.map(r => r[descCol.c] || '');
+  if (!amountCol) signMethod = `separate "${debitCol.name}" / "${creditCol.name}" columns`;
+  else if (indCol && raw.every(v => v == null || v >= 0)) {
+    raw = raw.map((v, i) => v == null ? v : indIsCredit(data[i][indCol.c]) ? Math.abs(v) : -Math.abs(v));
+    signMethod = `"${indCol.name}" column says debit/credit`;
+  } else {
+    const votes = [];
+    if (indCol) {
+      let s = 0;
+      raw.forEach((v, i) => { if (v) s += (indIsCredit(data[i][indCol.c]) ? 1 : -1) * Math.sign(v); });
+      if (s) votes.push([Math.sign(s), `"${indCol.name}" column`]);
+    }
+    if (balanceCol) {
+      const bal = data.map(r => parseAmount(r[balanceCol.c]));
+      const score = s => {
+        let k = 0;
+        for (let i = 1; i < n; i++) {
+          if (bal[i] == null || bal[i - 1] == null) continue;
+          if ((raw[i] != null && Math.abs(bal[i] - bal[i - 1] - s * raw[i]) < 0.006) ||
+              (raw[i - 1] != null && Math.abs(bal[i - 1] - bal[i] - s * raw[i - 1]) < 0.006)) k++;
+        }
+        return k;
+      };
+      const up = score(1), down = score(-1);
+      if (up !== down && Math.max(up, down) >= (n - 1) * 0.5) votes.push([up > down ? 1 : -1, `running "${balanceCol.name}" column`]);
+    }
+    {
+      const IN = /PAYMENT RECEIVED|THANK YOU|AUTOPAY|REFUND|RETURN|PAYROLL|DIRECT DEP|SALARY|INTEREST PAID|CASH ?BACK/i;
+      let pos = 0, neg = 0;
+      raw.forEach((v, i) => { if (v && IN.test(descs[i])) v > 0 ? pos++ : neg++; });
+      if (pos + neg && (pos >= 2 * neg || neg >= 2 * pos) && pos !== neg) votes.push([pos > neg ? 1 : -1, 'payments/refunds/payroll in the descriptions']);
+    }
+    {
+      let pos = 0, neg = 0;
+      raw.forEach(v => { if (v > 0) pos++; else if (v < 0) neg++; });
+      votes.push([pos > neg ? -1 : 1, 'most rows are purchases']);
+    }
+    [sign, signMethod] = votes[0];
+    if (sign === -1) raw = raw.map(v => v == null ? v : -v);
+  }
+
+  const txns = [];
+  let skipped = 0;
+  data.forEach((r, i) => {
+    const date = toISO(dateParts(r[dateCol.c]), order.order);
+    const amount = raw[i];
+    const desc = (r[descCol.c] || '').replace(/\s+/g, ' ').trim();
+    if (!date || amount == null || !desc) { skipped++; return; }
+    if (/^(beginning|ending|opening|closing) balance/i.test(desc)) { skipped++; return; }
+    txns.push({ date, desc, amount: Math.round(amount * 100) / 100, bankCat: catCol ? (r[catCol.c] || '') : '' });
+  });
+  if (!txns.length) return { error: 'Found a table, but no rows with a date and an amount.' };
+
+  return {
+    account: guessAccount(names, cols, filename, data),
+    mapping: {
+      file: filename, delimiter: delim === '\t' ? 'tab' : delim, headerRow: table.headerIndex + 1,
+      date: dateCol.name, dateFormat: order.label, description: descCol.name,
+      amount: amountCol ? amountCol.name : `${debitCol.name} / ${creditCol.name}`,
+      category: catCol ? catCol.name : null,
+      signs: amountCol ? (sign === 1 ? 'negative = money out' : 'positive = money out (flipped)') : 'debit = out, credit = in',
+      signMethod,
+    },
+    txns, skipped,
+  };
+}
+
+function guessAccount(names, cols, filename, data) {
+  const h = names.join('|').toLowerCase();
+  let bank = null;
+  if (/card member/.test(h) && /account #/.test(h)) bank = 'American Express';
+  else if (/posted date/.test(h) && /card no/.test(h)) bank = 'Capital One';
+  else if (/posting date/.test(h) && /check or slip/.test(h)) bank = 'Chase';
+  else if (/running bal/.test(h)) bank = 'Bank of America';
+  let digits = null;
+  const idCol = cols.find(k => /card no|card number|account|acct/i.test(k.name) && k.filled);
+  if (idCol) { const m = idCol.vals.find(v => v).replace(/\D/g, ''); if (m.length >= 4) digits = m.slice(-4); }
+  if (!digits) { const m = filename.match(/[A-Za-z](\d{4})(?!\d)/); if (m) digits = m[1]; }
+  const base = filename.replace(/\.[^.]+$/, '');
+  if (!bank && /^chase/i.test(base)) bank = 'Chase';
+  if (bank) return digits ? `${bank} ···${digits}` : bank;
+  return base.replace(/[_]+/g, ' ').trim() || 'Account';
+}
+
+/* ======================= categorisation ======================= */
+// Normalised text used for all matching: uppercase words, store numbers kept as their own tokens.
+const NOISE = new Set(['DES', 'PPD', 'ID', 'POS', 'PURCHASE', 'DEBIT', 'CARD', 'INDN', 'CO ID', 'WEB', 'TST']);
+function matchText(desc) {
+  return String(desc).toUpperCase().replace(/[^A-Z0-9&']+/g, ' ').trim().split(' ')
+    .filter(w => w && !NOISE.has(w)).join(' ');
+}
+// A merchant key for a learned rule: leading words up to the first token containing digits.
+function merchantKey(desc) {
+  const words = matchText(desc).split(' ');
+  const out = [];
+  for (const w of words) { if (/\d/.test(w)) break; out.push(w); if (out.length >= 5) break; }
+  return out.length ? out.join(' ') : words.join(' ');
+}
+
+const BUILTIN = [
+  [INCOME, /\b(PAYROLL|SALARY|DIRECT DEP(OSIT)?|DIR DEP|INTEREST PAID|DIVIDEND)\b/, 'in'],
+  ['Housing', /\b(RENT|PROPERTIES|PROPERTY MGMT|APARTMENTS?|LEASING|MORTGAGE|HOA)\b/],
+  ['Groceries', /\b(TRADER JOE'?S?|WHOLE FOODS|WHOLEFDS|KROGER|COSTCO|SAFEWAY|PUBLIX|ALDI|H E B|HEB|WEGMANS|SPROUTS|FOOD LION|GROCERY|SUPERMARKET|ALBERTSONS|MEIJER|INSTACART)\b/],
+  ['Dining', /\b(SHAKE SHACK|SWEETGREEN|CHIPOTLE|STARBUCKS|DOORDASH|UBER EATS|GRUBHUB|MCDONALD'?S|BURGER|PIZZA|RESTAURANT|CAFE|COFFEE|TACO|PANERA|DUNKIN|CHICK FIL A|WENDY'?S|DINER|SUSHI)\b/],
+  ['Utilities', /\b(SPECTRUM|COMCAST|XFINITY|AT&T|VERIZON|T MOBILE|UTILITIES|UTILITY|ELECTRIC|WATER|SEWER|PG&E|DUKE ENERGY|INTERNET|WIRELESS)\b/],
+  ['Transport', /\b(CHEVRON|EXXON|EXXONMOBIL|SHELL OIL|SHELL SERVICE|BP|MOBIL|TEXACO|VALERO|SUNOCO|CITGO|MARATHON PETRO|PHILLIPS 66|UBER|LYFT|PARKING|TOLL|TRANSIT|GAS STATION)\b/],
+  ['Insurance', /\b(INSURANCE|STATE FARM|GEICO|PROGRESSIVE|ALLSTATE|LIBERTY MUTUAL|USAA|LEMONADE)\b/],
+  ['Subscriptions', /\b(NETFLIX|SPOTIFY|YOUTUBE|HULU|DISNEY|HBO|ADOBE|APPLE COM BILL|ICLOUD|PATREON|AUDIBLE|DROPBOX|GITHUB|PARAMOUNT|PEACOCK|SIRIUSXM|NYTIMES)\b/],
+  ['Health', /\b(PHARMACY|CVS|WALGREENS|RITE AID|DENTAL|DOCTOR|CLINIC|HOSPITAL|MEDICAL|GYM|FITNESS)\b/],
+  ['Shopping', /\b(AMAZON|AMZN|TARGET|BEST BUY|ETSY|WALMART|WAL MART|EBAY|IKEA|HOME DEPOT|LOWE'?S|MACY'?S|NORDSTROM|KOHL'?S|TJ MAXX|MARSHALLS)\b/],
+  ['Travel', /\b(AIRLINES?|DELTA AIR|UNITED AIR|SOUTHWEST|HOTEL|MARRIOTT|HILTON|AIRBNB|EXPEDIA|HERTZ|AVIS)\b/],
+  ['Entertainment', /\b(CINEMA|THEATRE|THEATER|AMC|TICKETMASTER|STEAM|PLAYSTATION|XBOX|NINTENDO)\b/],
+  ['Fees & Interest', /\b(FEE|INTEREST CHARGE|FINANCE CHARGE|OVERDRAFT)\b/, 'out'],
+];
+const BANK_CATS = [
+  [/dining|restaurant|food & drink/i, 'Dining'], [/grocer/i, 'Groceries'], [/gas|automotive|transport/i, 'Transport'],
+  [/merchandise|shopping/i, 'Shopping'], [/utilit|phone|cable/i, 'Utilities'], [/insurance/i, 'Insurance'],
+  [/health|medical/i, 'Health'], [/travel|airfare|lodging/i, 'Travel'], [/entertain/i, 'Entertainment'], [/fee|interest/i, 'Fees & Interest'],
+];
+// Payments to/from your own accounts. Deliberately narrow: "ZELLE PAYMENT TO <landlord>" or "AUTO PAY" insurance is real spending.
+const TRANSFER_RX = /\b(AUTOPAY|PAYMENT RECEIVED|PAYMENT THANK YOU|THANK YOU|CRCARDPMT|CARD PMT|CARD PYMT|MOBILE PYMT|ONLINE PAYMENT|E ?PAYMENT|ONLINE TRANSFER|TRANSFER (TO|FROM)|XFER|(AMERICAN EXPRESS|AMEX|CAPITAL ONE|CHASE CREDIT|CHASE CARD|CITI CARD|CITIBANK|DISCOVER|BARCLAYCARD|SYNCHRONY|APPLECARD|BK OF AMER|BANK OF AMERICA)( \w+){0,3} (PMT|PYMT|PAYMENT))\b/;
+const PAIR_HINT = /PAY|PMT|PYMT|TRANSFER|XFER|THANK|CRCARD|ACH|ONLINE|DEPOSIT|WITHDRAW|SAVINGS/;
+
+function dayNum(iso) { return Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 864e5; }
+
+// Returns Map id -> {cat, why}
+function categorizeAll() {
+  const out = new Map();
+  const rules = state.rules.map(r => ({ r, p: ' ' + matchText(r.pattern) + ' ' }))
+    .filter(x => x.p.trim())
+    .sort((a, b) => b.p.length - a.p.length || (b.r.created || 0) - (a.r.created || 0));
+  const text = new Map();
+  for (const t of state.txns) {
+    const m = ' ' + matchText(t.desc) + ' ';
+    text.set(t.id, m);
+    const hit = rules.find(x => m.includes(x.p));
+    if (hit) out.set(t.id, { cat: hit.r.category, why: 'your rule: ' + hit.r.pattern, rule: true });
+  }
+  // 1) pair up equal-and-opposite amounts between two different accounts within 5 days
+  const open = state.txns.filter(t => !out.has(t.id));
+  const inflows = new Map();
+  for (const t of open) if (t.amount > 0) {
+    const k = Math.round(t.amount * 100);
+    if (!inflows.has(k)) inflows.set(k, []);
+    inflows.get(k).push(t);
+  }
+  const paired = new Set();
+  for (const o of open.slice().sort((a, b) => a.date < b.date ? -1 : 1)) {
+    if (o.amount >= 0) continue;
+    const list = inflows.get(Math.round(-o.amount * 100));
+    if (!list) continue;
+    let best = null, bestGap = 99;
+    for (const i of list) {
+      if (paired.has(i.id) || i.acct === o.acct) continue;
+      const gap = Math.abs(dayNum(i.date) - dayNum(o.date));
+      if (gap > 5 || !(PAIR_HINT.test(text.get(o.id)) || PAIR_HINT.test(text.get(i.id)))) continue;
+      if (gap < bestGap) { best = i; bestGap = gap; }
+    }
+    if (best) {
+      paired.add(best.id); paired.add(o.id);
+      out.set(o.id, { cat: TRANSFER, why: `matches ${best.acct} on ${best.date}` });
+      out.set(best.id, { cat: TRANSFER, why: `matches ${o.acct} on ${o.date}` });
+    }
+  }
+  // 2) everything else
+  for (const t of state.txns) {
+    if (out.has(t.id)) continue;
+    const m = text.get(t.id);
+    if (TRANSFER_RX.test(m)) { out.set(t.id, { cat: TRANSFER, why: 'looks like a payment between accounts' }); continue; }
+    const b = BUILTIN.find(([, rx, dir]) => rx.test(m) && !(dir === 'in' && t.amount <= 0) && !(dir === 'out' && t.amount >= 0));
+    if (b) { out.set(t.id, { cat: b[0], why: 'auto' }); continue; }
+    const bc = t.bankCat && BANK_CATS.find(([rx]) => rx.test(t.bankCat));
+    if (bc && t.amount < 0) { out.set(t.id, { cat: bc[1], why: `bank category "${t.bankCat}"` }); continue; }
+    out.set(t.id, t.amount > 0 ? { cat: INCOME, why: 'money in' } : { cat: UNCAT, why: 'no match yet' });
+  }
+  return out;
+}
+
+/* ======================= import ======================= */
+async function importFiles(files) {
+  const report = document.getElementById('report');
+  report.innerHTML = '';
+  for (const f of files) {
+    const li = document.createElement('li');
+    report.appendChild(li);
+    try {
+      const res = analyzeFile(await f.text(), f.name);
+      if (res.error) { li.innerHTML = `<b>${esc(f.name)}</b>: <span class="err">${esc(res.error)}</span>`; continue; }
+      const added = mergeTxns(res.account, res.txns);
+      state.accounts[res.account] = Object.assign({}, state.accounts[res.account] || {}, res.mapping, { flipped: (state.accounts[res.account] || {}).flipped || false });
+      // A re-imported account that the user had flipped stays flipped.
+      if (state.accounts[res.account].flipped) for (const t of added) t.amount = -t.amount;
+      li.innerHTML = `<b>${esc(f.name)}</b> → <b>${esc(res.account)}</b>: ${added.length} new transaction${added.length === 1 ? '' : 's'}` +
+        (res.txns.length - added.length ? `, ${res.txns.length - added.length} already imported` : '') +
+        `. <span class="muted">Date “${esc(res.mapping.date)}” (${esc(res.mapping.dateFormat)}), description “${esc(res.mapping.description)}”, amount “${esc(res.mapping.amount)}” — ${esc(res.mapping.signs)}, from ${esc(res.mapping.signMethod)}.</span>`;
+    } catch (e) {
+      li.innerHTML = `<b>${esc(f.name)}</b>: <span class="err">${esc(e.message || String(e))}</span>`;
+    }
+  }
+  save();
+  const months = allMonths();
+  if (months.length && (!ui.month || !months.includes(ui.month))) ui.month = months[0];
+  render();
+}
+
+// Dedupe so overlapping or repeated exports don't double count: same account+date+amount+text, by occurrence.
+function mergeTxns(acct, txns) {
+  const have = new Set(state.txns.map(t => t.id));
+  const seen = {};
+  const added = [];
+  for (const t of txns) {
+    const base = `${acct}|${t.date}|${t.amount.toFixed(2)}|${matchText(t.desc)}`;
+    seen[base] = (seen[base] || 0) + 1;
+    const id = `${base}#${seen[base]}`;
+    if (have.has(id)) continue;
+    const row = { id, acct, ...t };
+    state.txns.push(row); added.push(row); have.add(id);
+  }
+  return added;
+}
+
+/* ======================= rendering ======================= */
+const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const money = v => fmt.format(Math.abs(v) < 0.005 ? 0 : v);
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+const $ = id => document.getElementById(id);
+function allMonths() { return [...new Set(state.txns.map(t => t.date.slice(0, 7)))].sort().reverse(); }
+function monthLabel(m) { const [y, mo] = m.split('-'); return new Date(Date.UTC(+y, +mo - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); }
+function expenseCats() { return state.categories.filter(c => c !== INCOME && c !== TRANSFER); }
+
+function budgetFor(month, cat) {
+  const months = Object.keys(state.budgets).filter(m => m <= month).sort().reverse();
+  for (const m of months) if (state.budgets[m][cat] != null) return state.budgets[m][cat];
+  return 0;
+}
+
+function monthTotals(month, cats) {
+  const r = { income: 0, spent: 0, transfers: 0, byCat: {} };
+  for (const t of state.txns) {
+    if (t.date.slice(0, 7) !== month) continue;
+    const c = cats.get(t.id).cat;
+    if (c === TRANSFER) { if (t.amount > 0) r.transfers += t.amount; }
+    else if (c === INCOME) r.income += t.amount;
+    else { r.byCat[c] = (r.byCat[c] || 0) - t.amount; r.spent -= t.amount; }
+  }
+  const round = v => Math.round(v * 100) / 100;
+  r.income = round(r.income); r.spent = round(r.spent); r.transfers = round(r.transfers);
+  for (const k in r.byCat) r.byCat[k] = round(r.byCat[k]);
+  return r;
+}
+
+function catOptions(selected) {
+  const all = [...expenseCats(), INCOME, TRANSFER];
+  if (!all.includes(selected)) all.push(selected);
+  return all.map(c => `<option${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('') + '<option value="__new">+ New category…</option>';
+}
+
+function render() {
+  const months = allMonths();
+  const sel = $('monthSel');
+  sel.innerHTML = months.length ? months.map(m => `<option value="${m}"${m === ui.month ? ' selected' : ''}>${monthLabel(m)}</option>`).join('') : '<option>No data yet</option>';
+  $('prevMonth').disabled = !months.length || months.indexOf(ui.month) >= months.length - 1;
+  $('nextMonth').disabled = !months.length || months.indexOf(ui.month) <= 0;
+  const month = ui.month;
+  const cats = categorizeAll();
+  const tot = month ? monthTotals(month, cats) : { income: 0, spent: 0, transfers: 0, byCat: {} };
+
+  // budget table
+  let budgeted = 0;
+  const rows = [];
+  for (const c of expenseCats()) {
+    const b = month ? budgetFor(month, c) : 0, s = tot.byCat[c] || 0;
+    budgeted += b;
+    if (!ui.showEmpty && !b && !s) continue;
+    const rem = b - s, pct = b > 0 ? Math.min(100, Math.max(0, s / b * 100)) : (s > 0 ? 100 : 0);
+    const cls = !b ? 'none' : s > b ? 'over' : pct > 85 ? 'near' : '';
+    rows.push(`<tr data-cat="${esc(c)}"><td>${esc(c)}</td>
+      <td class="num"><input class="budget" type="number" min="0" step="1" value="${b || ''}" placeholder="0" data-cat="${esc(c)}" aria-label="Budget for ${esc(c)}"></td>
+      <td class="num spent">${money(s)}</td>
+      <td class="num remain ${rem < 0 ? 'neg' : ''}">${money(rem)}</td>
+      <td><div class="bar"><div class="${cls}" style="width:${pct}%"></div></div></td></tr>`);
+  }
+  for (const c in tot.byCat) if (!expenseCats().includes(c)) { /* category removed but still referenced by a rule */
+    rows.push(`<tr data-cat="${esc(c)}"><td>${esc(c)}</td><td></td><td class="num spent">${money(tot.byCat[c])}</td><td class="num remain">${money(-tot.byCat[c])}</td><td></td></tr>`);
+  }
+  rows.push(`<tr class="total"><td>Total</td><td class="num" id="budget-total">${money(budgeted)}</td><td class="num" id="spent-total">${money(tot.spent)}</td><td class="num ${budgeted - tot.spent < 0 ? 'neg' : ''}" id="remain-total">${money(budgeted - tot.spent)}</td><td></td></tr>`);
+  $('budgetTable').tBodies[0].innerHTML = rows.join('');
+  $('budgetMonthLabel').textContent = month ? monthLabel(month) : '';
+
+  $('sum-income').textContent = money(tot.income);
+  $('sum-spent').textContent = money(tot.spent);
+  const left = tot.income - tot.spent;
+  $('sum-left').textContent = money(left);
+  $('sum-left').className = 'value ' + (left < 0 ? 'neg' : 'pos');
+  $('sum-budgeted').textContent = money(budgeted);
+  $('sum-tobudget').textContent = money(tot.income - budgeted);
+  $('sum-transfers').textContent = money(tot.transfers);
+
+  // transactions
+  const cf = $('catFilter');
+  const usedCats = [...new Set([...cats.values()].map(x => x.cat))].sort();
+  cf.innerHTML = '<option value="">All categories</option>' + usedCats.map(c => `<option${c === ui.catFilter ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  const q = ui.search.trim().toUpperCase();
+  const list = state.txns.filter(t => t.date.slice(0, 7) === month)
+    .filter(t => !q || t.desc.toUpperCase().includes(q) || t.acct.toUpperCase().includes(q))
+    .filter(t => !ui.catFilter || cats.get(t.id).cat === ui.catFilter)
+    .sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : a.acct.localeCompare(b.acct));
+  $('txnCount').textContent = month ? `${list.length} in ${monthLabel(month)}` : '';
+  $('txnTable').tBodies[0].innerHTML = list.length ? list.map(t => {
+    const c = cats.get(t.id);
+    return `<tr class="${c.cat === TRANSFER ? 'transfer' : ''} ${c.cat === UNCAT ? 'uncat' : ''}" data-id="${esc(t.id)}">
+      <td>${t.date}</td><td>${esc(t.acct)}</td>
+      <td class="desc">${esc(t.desc)} <span class="tag ${c.rule ? 'rule' : ''}" title="${esc(c.why)}">${esc(c.rule ? 'rule' : c.why.length > 28 ? c.why.slice(0, 26) + '…' : c.why)}</span></td>
+      <td><select class="catsel" data-id="${esc(t.id)}">${catOptions(c.cat)}</select></td>
+      <td class="num ${t.amount > 0 ? 'pos' : ''}">${money(t.amount)}</td></tr>`;
+  }).join('') : `<tr><td colspan="5" class="empty">${state.txns.length ? 'Nothing matches.' : 'Import a CSV to get started.'}</td></tr>`;
+
+  // accounts
+  const accts = Object.keys(state.accounts).sort();
+  $('accounts').innerHTML = accts.length ? '<table><tbody>' + accts.map(a => {
+    const m = state.accounts[a], count = state.txns.filter(t => t.acct === a).length;
+    return `<tr><td><b>${esc(a)}</b> <span class="muted">${count} txns</span>
+      <details><summary>how this file was read</summary><div class="muted" style="font-size:12px">
+      File: ${esc(m.file)}${m.headerRow > 0 ? ` (header on line ${m.headerRow})` : ' (no header row)'}<br>
+      Date: “${esc(m.date)}” as ${esc(m.dateFormat)}<br>Description: “${esc(m.description)}”<br>
+      Amount: “${esc(m.amount)}”, ${esc(m.signs)}${m.flipped ? ' — then flipped by you' : ''} (decided from ${esc(m.signMethod)})
+      ${m.category ? `<br>Bank category: “${esc(m.category)}”` : ''}</div></details></td>
+      <td class="num"><button class="link" data-flip="${esc(a)}" title="Use if money in/out came out backwards">Flip signs</button>
+      <button class="link" data-rename="${esc(a)}">Rename</button>
+      <button class="link danger" data-del="${esc(a)}">Remove</button></td></tr>`;
+  }).join('') + '</tbody></table>' : '<div class="empty">No accounts yet.</div>';
+
+  // rules
+  const counts = {};
+  for (const [, v] of cats) if (v.rule) counts[v.why] = (counts[v.why] || 0) + 1;
+  $('rules').innerHTML = state.rules.length ? '<table><tbody>' + state.rules.slice().sort((a, b) => a.pattern.localeCompare(b.pattern)).map(r =>
+    `<tr><td>contains <input type="text" class="rulepat" data-created="${r.created}" value="${esc(r.pattern)}" style="width:60%"></td>
+     <td>→ <select class="rulecat" data-created="${r.created}">${catOptions(r.category)}</select></td>
+     <td class="muted num">${counts['your rule: ' + r.pattern] || 0}×</td>
+     <td class="num"><button class="link danger" data-delrule="${r.created}">Delete</button></td></tr>`).join('') + '</tbody></table>'
+    : '<div class="empty">None yet. Change a transaction’s category to teach one.</div>';
+}
+
+/* ======================= interactions ======================= */
+let toastTimer;
+function toast(html, undo) {
+  const el = $('toast');
+  el.innerHTML = html + (undo ? ' <button id="undoBtn">Undo</button>' : '');
+  el.style.display = 'block';
+  if (undo) $('undoBtn').onclick = () => { undo(); el.style.display = 'none'; };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
+
+function newCategory() {
+  const name = (prompt('New category name') || '').trim();
+  if (!name) return null;
+  if (name === INCOME || name === TRANSFER) return name;
+  if (!state.categories.includes(name)) state.categories.splice(Math.max(0, state.categories.indexOf(UNCAT)), 0, name);
+  return name;
+}
+
+function learnRule(txn, category) {
+  const pattern = merchantKey(txn.desc);
+  const prev = state.rules.slice();
+  state.rules = state.rules.filter(r => matchText(r.pattern) !== pattern);
+  state.rules.push({ pattern, category, created: Date.now() + Math.random() });
+  save(); render();
+  const n = [...categorizeAll().values()].filter(v => v.why === 'your rule: ' + pattern).length;
+  toast(`Rule saved: “${esc(pattern)}” → ${esc(category)} (${n} transaction${n === 1 ? '' : 's'})`, () => { state.rules = prev; save(); render(); });
+}
+
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.classList.contains('catsel')) {
+    let cat = t.value;
+    if (cat === '__new') { cat = newCategory(); if (!cat) { render(); return; } }
+    const txn = state.txns.find(x => x.id === t.dataset.id);
+    if (txn) learnRule(txn, cat);
+  } else if (t.classList.contains('budget')) {
+    const v = parseFloat(t.value);
+    (state.budgets[ui.month] = state.budgets[ui.month] || {})[t.dataset.cat] = isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : 0;
+    save(); render();
+  } else if (t.classList.contains('rulepat') || t.classList.contains('rulecat')) {
+    const r = state.rules.find(x => String(x.created) === t.dataset.created);
+    if (!r) return;
+    if (t.classList.contains('rulepat')) { if (!t.value.trim()) return; r.pattern = t.value.trim().toUpperCase(); }
+    else { let c = t.value; if (c === '__new') c = newCategory(); if (!c) { render(); return; } r.category = c; }
+    save(); render();
+  } else if (t.id === 'monthSel') { ui.month = t.value; render(); }
+  else if (t.id === 'showEmpty') { ui.showEmpty = t.checked; render(); }
+  else if (t.id === 'catFilter') { ui.catFilter = t.value; render(); }
+  else if (t.id === 'fileInput') { importFiles([...t.files]); t.value = ''; }
+  else if (t.id === 'restoreInput') { restore(t.files[0]); t.value = ''; }
+});
+$('search').addEventListener('input', e => { ui.search = e.target.value; render(); });
+
+document.addEventListener('click', e => {
+  const t = e.target, d = t.dataset || {};
+  if (t.id === 'importBtn') $('fileInput').click();
+  else if (t.id === 'prevMonth' || t.id === 'nextMonth') {
+    const ms = allMonths(), i = ms.indexOf(ui.month) + (t.id === 'prevMonth' ? 1 : -1);
+    if (ms[i]) { ui.month = ms[i]; render(); }
+  } else if (t.id === 'addCat') { if (newCategory()) { ui.showEmpty = true; $('showEmpty').checked = true; save(); render(); } }
+  else if (d.flip) {
+    for (const x of state.txns) if (x.acct === d.flip) x.amount = -x.amount;
+    state.accounts[d.flip].flipped = !state.accounts[d.flip].flipped;
+    save(); render();
+  } else if (d.rename) {
+    const name = (prompt('Account name', d.rename) || '').trim();
+    if (!name || name === d.rename || state.accounts[name]) return;
+    state.accounts[name] = state.accounts[d.rename]; delete state.accounts[d.rename];
+    for (const x of state.txns) if (x.acct === d.rename) { x.acct = name; x.id = name + x.id.slice(d.rename.length); }
+    save(); render();
+  } else if (d.del) {
+    if (!confirm(`Remove ${d.del} and all its transactions?`)) return;
+    state.txns = state.txns.filter(x => x.acct !== d.del); delete state.accounts[d.del];
+    const ms = allMonths(); if (!ms.includes(ui.month)) ui.month = ms[0] || null;
+    save(); render();
+  } else if (d.delrule) {
+    state.rules = state.rules.filter(r => String(r.created) !== d.delrule); save(); render();
+  } else if (t.id === 'exportBtn') {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' }));
+    a.download = `pocket-budget-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } else if (t.id === 'restoreBtn') $('restoreInput').click();
+  else if (t.id === 'wipeBtn') {
+    if (!confirm('Erase all transactions, rules and budgets from this browser?')) return;
+    state = blankState(); ui.month = null; save(); $('report').innerHTML = ''; render();
+  }
+});
+
+async function restore(file) {
+  if (!file) return;
+  try {
+    const s = JSON.parse(await file.text());
+    if (!s || !Array.isArray(s.txns)) throw new Error('not a Pocket Budget backup');
+    state = Object.assign(blankState(), s); save();
+    ui.month = allMonths()[0] || null; render();
+    toast('Backup restored.');
+  } catch (e) { toast('Could not restore: ' + esc(e.message)); }
+}
+
+// drag & drop anywhere
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  const files = [...(e.dataTransfer.files || [])];
+  if (files.length) importFiles(files);
+});
+
+ui.month = allMonths()[0] || null;
+render();
+</script>
+</body>
+</html>
