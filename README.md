@@ -4,7 +4,7 @@ A free, private budget app in one HTML file. No server, no sign-up. Drop in CSV 
 
 Use it: https://denzil10.github.io/pocket-budget/
 
-Built by an AI agent (Claude Code) from one prompt in 8m 29s, then fixed after a British bank file broke it (5m 38s). Shown on the YouTube channel Agent at Work (@theagentatwork).
+Built by an AI agent (Claude Code) from one prompt in 8m 29s, then fixed after a British bank file broke it (5m 38s). Video: https://youtu.be/K792XkJVY4w (YouTube channel Agent at Work, @theagentatwork).
 
 - `index.html`: the app after the fix (day-first dates, a currency per account).
 - `first-build/index.html`: the first build, before the fix. It reads 03/11/2026 as March 11 in a US-English browser.
